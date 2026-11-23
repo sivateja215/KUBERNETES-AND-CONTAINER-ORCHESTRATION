@@ -1,0 +1,28 @@
+
+# Create LAB-1 folder and enter it
+New-Item -ItemType Directory -Force -Path ".\LAB-1" | Out-Null
+cd .\LAB-1
+
+# 1. kind-3node.yaml
+@'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: klu
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+'@ | Set-Content -Encoding utf8 kind-3node.yaml
+
+# 2. kind-4node.yaml
+@'
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: klu
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker
+'@ | Set-Content -Encoding utf8 kind-4node.yaml
+

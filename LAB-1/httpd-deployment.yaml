@@ -1,0 +1,25 @@
+# 3. httpd-deployment.yaml
+@'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpd
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: httpd
+  template:
+    metadata:
+      labels:
+        app: httpd
+    spec:
+      containers:
+        - name: httpd
+          image: httpd
+          ports:
+            - containerPort: 80
+'@ | Set-Content -Encoding utf8 httpd-deployment.yaml
+
+# Display all three files
+Get-ChildItem *.yaml

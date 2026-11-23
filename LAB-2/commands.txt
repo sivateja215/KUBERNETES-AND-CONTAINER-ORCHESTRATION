@@ -1,0 +1,75 @@
+LAB-2 - Experiment 2: Trace kubectl create deployment End to End
+Environment: Windows PowerShell, Docker Desktop, kind cluster named klu
+
+IMPORTANT:
+- Start Docker Desktop and wait until the Engine is running.
+- Use the existing 3-node kind cluster from LAB-1.
+- Open three PowerShell windows:
+  Window 1 = watch Events
+  Window 2 = watch Pods
+  Window 3 = run the commands below.
+- Run commands in order. Keep Window 1 and Window 2 running until cleanup.
+
+STEP 0 - Prepare the cluster (Window 3)
+kubectl config use-context kind-klu
+kubectl get nodes
+kubectl delete deployment,service web --ignore-not-found
+kubectl delete deployment hello --ignore-not-found
+
+Window 1:
+kubectl get events -w
+
+Window 2:
+kubectl get pods -o wide -w
+
+STEP 1 - Trace the request to the API server (Window 3)
+kubectl create deployment web --image=nginx:1.27 --replicas=2 -v=6 2>&1 | Select-String "deployments"
+
+Look for the POST request and the response "201 Created".
+
+STEP 2 - Identify which component reported each event
+kubectl get events --sort-by=.metadata.creationTimestamp -o "custom-columns=SOURCE:.source.component,REASON:.reason,OBJECT:.involvedObject.name"
+
+STEP 3 - Inspect ownership, node assignment and Pod IP
+kubectl get rs -l app=web -o "custom-columns=RS:.metadata.name,OWNER:.metadata.ownerReferences[0].name"
+kubectl get pods -l app=web -o "custom-columns=POD:.metadata.name,OWNER:.metadata.ownerReferences[0].name,NODE:.spec.nodeName,IP:.status.podIP"
+
+Write down the node name and one Pod IP for the next steps.
+
+STEP 4 - Inspect etcd keys (type this as ONE line)
+kubectl -n kube-system exec etcd-klu-control-plane -- etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key get /registry --prefix --keys-only | Select-String "web"
+
+STEP 5 - Inspect the Pod sandbox and nginx container on its node
+Replace the example node name with the NODE value from Step 3:
+$NODE = "klu-worker"
+docker exec $NODE crictl pods --name web
+docker exec $NODE crictl ps --name nginx
+
+STEP 6 - Inspect the sandbox IP and kubelet logs
+Replace <POD-ID> with the Pod ID shown by "crictl pods":
+docker exec $NODE crictl inspectp <POD-ID> | Select-String '"ip"'
+docker exec $NODE journalctl -u kubelet --no-pager | Select-String "web-" | Select-Object -Last 5
+
+STEP 7 - Create a Service and inspect its endpoints and kube-proxy rules
+kubectl expose deployment web --port=80
+kubectl get service web
+kubectl get endpointslices -l kubernetes.io/service-name=web
+docker exec $NODE iptables-save | Select-String "default/web"
+
+If iptables-save prints nothing, wait a few seconds and try:
+docker exec $NODE nft list ruleset | Select-String "default/web"
+
+STEP 8 - Demonstrate 409 Conflict (run each line in order)
+cmd /c "kubectl get deployment web -o yaml > web-old.yaml"
+Select-String "resourceVersion" web-old.yaml
+kubectl scale deployment web --replicas=3
+kubectl replace -f web-old.yaml
+
+Expected: replace reports Error from server (Conflict), because web-old.yaml contains the old resourceVersion.
+
+STEP 9 - Clean up
+Press Ctrl+C in Window 1 and Window 2.
+kubectl delete service web
+kubectl delete deployment web
+
+Keep the klu cluster; later labs may use it.
