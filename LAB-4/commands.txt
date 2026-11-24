@@ -1,0 +1,75 @@
+====================================================================
+Experiment 4: Read the Scheduler and Find Why Pods Stay Pending
+Course: 26CS52B1E - Kubernetes and Container Orchestration
+Cluster: kind-klu (3-node Kind cluster, Kubernetes v1.37.0)
+====================================================================
+
+--- STEP 0: Verify Cluster, Control-Plane Taint, and Git ---
+cd /d "D:\M.Tech\1st Year\sem 2\KUBERNETES"
+kubectl config use-context kind-klu
+kubectl get nodes
+kubectl describe node klu-control-plane | findstr Taints
+git --version
+
+--- STEP 1: Sparse Checkout of kube-scheduler (v1.37.0) ---
+git clone --depth 1 --branch v1.37.0 --filter=blob:none --sparse https://github.com/kubernetes/kubernetes.git k8s-src
+cd k8s-src
+git sparse-checkout set pkg/scheduler staging/src/k8s.io/kube-scheduler
+dir pkg\scheduler
+
+--- STEP 2: Task 1 - Find Default Plugins and Weights ---
+findstr /n "Name: names" pkg\scheduler\apis\config\v1\default_plugins.go
+
+--- STEP 3: Task 2 - Find Filter and Score Plugin Methods ---
+findstr /s /n /r "^func.*Filter( ^func.*Score(" pkg\scheduler\framework\plugins\*.go | findstr /v "_test.go"
+
+--- STEP 4: Task 3 - Follow One Scheduling Cycle in schedule_one.go ---
+findstr /n /r "^func.*ScheduleOne( ^func.*schedulingCycle( ^func.*bindingCycle( ^func.*schedulePod( ^func.*findNodesThatFitPod( ^func.*prioritizeNodes(" pkg\scheduler\schedule_one.go
+
+--- STEP 5: Experiment A - Insufficient CPU (NodeResourcesFit) ---
+cd /d "D:\M.Tech\1st Year\sem 2\KUBERNETES\KUBERNETES AND CONTAINER ORCHESTRATION\LAB-4"
+notepad big.yaml
+kubectl apply -f big.yaml
+kubectl get pod big
+kubectl describe pod big
+findstr /n "Insufficient" "D:\M.Tech\1st Year\sem 2\KUBERNETES\k8s-src\pkg\scheduler\framework\plugins\noderesources\fit.go"
+
+--- STEP 6: Experiment B - Missing Node Label (NodeAffinity) ---
+notepad ssd.yaml
+kubectl apply -f ssd.yaml
+kubectl describe pod needs-ssd
+kubectl label node klu-worker disktype=ssd
+kubectl get pod needs-ssd -o wide
+findstr /n "didn't match" "D:\M.Tech\1st Year\sem 2\KUBERNETES\k8s-src\pkg\scheduler\framework\plugins\nodeaffinity\node_affinity.go"
+
+--- STEP 7: Experiment C - Taints and Tolerations (TaintToleration) ---
+kubectl taint node klu-worker exam=running:NoSchedule
+kubectl create deployment spread --image=nginx:1.27 --replicas=4
+kubectl get pods -l app=spread -o wide
+notepad spread-tol.yaml
+kubectl apply -f spread-tol.yaml
+kubectl get pods -l app=spread -o wide
+kubectl taint node klu-worker exam=running:NoSchedule-
+
+--- STEP 8: Experiment D - Host Port Conflict (NodePorts) ---
+notepad hostport.yaml
+kubectl apply -f hostport.yaml
+kubectl get pods -l app=hostport -o wide
+kubectl describe pod hostport-7685945bf-kcwkc
+findstr /n "free ports" "D:\M.Tech\1st Year\sem 2\KUBERNETES\k8s-src\pkg\scheduler\framework\plugins\nodeports\node_ports.go"
+
+--- STEP 9: Experiment E - Cordoned Nodes (NodeUnschedulable) ---
+kubectl cordon klu-worker
+kubectl cordon klu-worker2
+kubectl get nodes
+kubectl run closed --image=nginx:1.27
+kubectl describe pod closed
+kubectl uncordon klu-worker
+kubectl uncordon klu-worker2
+kubectl get pod closed -o wide
+
+--- STEP 10: Clean Up ---
+kubectl delete pod big needs-ssd closed
+kubectl delete deployment spread hostport
+kubectl label node klu-worker disktype-
+kubectl get pods
