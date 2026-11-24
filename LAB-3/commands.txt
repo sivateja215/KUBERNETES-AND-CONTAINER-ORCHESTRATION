@@ -1,0 +1,72 @@
+====================================================================
+Experiment 3: Write Your First Controller with client-go
+Course: 26CS52B1E - Kubernetes and Container Orchestration
+Cluster: kind-klu (3-node Kind cluster)
+====================================================================
+
+--- STEP 0: Verify Environment and Cluster [Window 1] ---
+go version
+kubectl config use-context kind-klu
+kubectl get nodes
+
+--- STEP 1: Initialize Go Project [Window 1] ---
+cd /d "D:\M.Tech\1st Year\sem 2\KUBERNETES"
+mkdir welcome-controller
+cd welcome-controller
+go mod init welcome-controller
+copy "C:\Users\Siva Teja\Downloads\main.go" .
+dir
+
+--- STEP 2: Download Dependencies & Build [Window 1] ---
+go get k8s.io/client-go@v0.37.1 k8s.io/api@v0.37.1 k8s.io/apimachinery@v0.37.1
+go mod tidy
+go build .
+dir
+
+--- STEP 3 & 4: Inspect Code & Start Controller [Window 1] ---
+type main.go
+go run .
+
+--- STEP 5: Trigger Controller with Managed Namespace [Window 2] ---
+kubectl create namespace team-a
+kubectl get configmap -n team-a
+kubectl label namespace team-a klu.edu/managed=true
+kubectl get namespace team-a --show-labels
+kubectl get configmap -n team-a
+kubectl get configmap welcome -n team-a -o yaml
+
+--- STEP 6: Experiment A - Self-Healing [Window 2] ---
+kubectl delete configmap welcome -n team-a
+kubectl get configmap -n team-a
+
+--- STEP 7: Experiment B - Catching Up (Level-Triggered) ---
+:: [Window 1] Press Ctrl+C to stop controller
+:: [Window 2] Create and label namespace while controller is stopped:
+kubectl create namespace team-b
+kubectl label namespace team-b klu.edu/managed=true
+kubectl get configmap -n team-b
+:: [Window 1] Restart controller:
+go run .
+:: [Window 2] Verify catch-up reconciliation:
+kubectl get configmap -n team-b
+
+--- STEP 8: Experiment C - Two Controllers (Idempotency) ---
+:: [Window 3] Start second controller instance:
+cd /d "D:\M.Tech\1st Year\sem 2\KUBERNETES\welcome-controller"
+go run .
+:: [Window 2] Create and label team-c:
+kubectl create namespace team-c
+kubectl label namespace team-c klu.edu/managed=true
+kubectl get configmap -n team-c
+:: [Window 3] Press Ctrl+C to stop second controller instance
+
+--- STEP 9: Experiment D - Removing the Label (Design Gap) [Window 2] ---
+kubectl label namespace team-a klu.edu/managed-
+kubectl get namespace team-a --show-labels
+kubectl get configmap -n team-a
+
+--- STEP 10: Clean Up ---
+:: [Window 1] Press Ctrl+C to stop controller
+:: [Window 2] Delete test namespaces:
+kubectl delete namespace team-a team-b team-c
+kubectl get namespaces
